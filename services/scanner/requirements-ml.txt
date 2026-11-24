@@ -1,0 +1,4 @@
+# Optional: local visual index (Mode A). CPU wheels are fine.
+# pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+open_clip_torch>=2.24
+faiss-cpu>=1.8
