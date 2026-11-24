@@ -92,7 +92,7 @@ class HybridMatcher(CardMatcher):
                 if ocr_read:
                     method_parts.append("ocr")
             except Exception as e:  # noqa: BLE001
-                log.debug("ocr failed: %s", e)
+                log.warning("ocr failed: %s", e)
         vision_read = None
         use_vision_now = self.vision is not None and (self.mode == "vision" or not hits)
         if use_vision_now:

@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import logging
+import os
 import re
 import shutil
 import subprocess
+import threading
 from typing import Optional
 
 import cv2
@@ -20,6 +23,12 @@ from ..db import ScryfallDB, normalize_name
 from ..detect.base import CardCrops
 from ..models import VisionRead
 from .base import FieldReader
+
+log = logging.getLogger(__name__)
+# Tesseract's OpenMP threading oversubscribes the CPU when many cards are read at once — one
+# thread per process plus a bounded number of concurrent processes is far faster.
+_TESS_ENV = {**os.environ, "OMP_THREAD_LIMIT": "1"}
+_OCR_SLOTS = threading.BoundedSemaphore(max(2, os.cpu_count() or 2))
 
 LANG_MAP = {"JP": "ja", "SP": "es", "CS": "zhs", "CT": "zht"}
 LANG_ALT = "EN|ES|FR|DE|IT|PT|JA|JP|KO|RU|ZHS|ZHT|SP"
@@ -47,10 +56,12 @@ def _ocr(gray: np.ndarray, psm: int = 6) -> str:
     if not ok:
         return ""
     try:
-        r = subprocess.run(["tesseract", "stdin", "stdout", "--psm", str(psm), "-l", "eng"],
-                           input=buf.tobytes(), capture_output=True, timeout=15)
+        with _OCR_SLOTS:
+            r = subprocess.run(["tesseract", "stdin", "stdout", "--psm", str(psm), "-l", "eng"],
+                               input=buf.tobytes(), capture_output=True, timeout=20, env=_TESS_ENV)
         return r.stdout.decode("utf-8", "ignore")
-    except (subprocess.SubprocessError, OSError):
+    except (subprocess.SubprocessError, OSError) as e:
+        log.warning("tesseract failed: %s", e)
         return ""
 
 
@@ -120,8 +131,8 @@ class TesseractStripReader(FieldReader):
 
         raw_strip = _cut(crops.card, (0.03, 0.912, 0.42, 0.978))
         text = await asyncio.to_thread(_ocr, prep_for_ocr(raw_strip), 6)
-        read = parse_strip(text)
         name_txt = await asyncio.to_thread(_ocr, prep_for_ocr(_cut(crops.card, NAME_BAR_BOX), 3.0), 7)
+        read = parse_strip(text)
         if self.db is not None and name_txt.strip():
             read.name = await asyncio.to_thread(resolve_name, self.db, name_txt)
         if not any([read.collector_number, read.set_code, read.name]):
