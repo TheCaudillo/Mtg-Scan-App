@@ -17,11 +17,12 @@ data/               scryfall.db, app.db, art_index/, uploads/  (gitignored)
 
 ## Quick start
 
-Prerequisites: Python 3.11+, Node 20+, and optionally `tesseract` (`brew install tesseract` /
+Prerequisites: Python 3.11+ with venv (Ubuntu/WSL: `sudo apt install python3-venv python3-pip`),
+Node 20+ (`node --version`; install via https://nodejs.org or nvm), and optionally `tesseract` (`brew install tesseract` /
 `sudo apt install tesseract-ocr`) for free local collector-number reading.
 
 ```bash
-make setup          # pip deps + npm install, creates .env
+make setup          # creates .venv (no activation needed), pip deps + npm install, .env
 make sync           # Scryfall default_cards → data/scryfall.db (~110k printings, ~20 s)
 make setup-ml       # OpenCLIP + FAISS (CPU is fine)
 make index-quick    # art index for printings since 2023 (~10 min) — or `make index` for all (~30-60 min)

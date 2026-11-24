@@ -1,5 +1,7 @@
 SHELL := /bin/bash
-PY ?= python3
+SYSTEM_PY ?= python3
+VENV := $(CURDIR)/.venv
+PY := $(VENV)/bin/python
 SCANNER := services/scanner
 WEB := apps/web
 API_HOST ?= 127.0.0.1
@@ -23,13 +25,18 @@ help:
 env:
 	@test -f .env || (cp .env.example .env && echo "created .env from .env.example")
 
-setup: env
+$(PY):
+	@$(SYSTEM_PY) -m venv $(VENV) || (echo; echo "Could not create a virtualenv. On Ubuntu/Debian run:  sudo apt install python3-venv python3-pip"; exit 1)
+	$(PY) -m pip install --upgrade pip
+
+setup: env $(PY)
+	@command -v npm >/dev/null || (echo; echo "npm not found: install Node.js 20+ (see README)"; exit 1)
 	$(PY) -m pip install -r $(SCANNER)/requirements.txt
 	cd $(WEB) && npm install
 	@command -v tesseract >/dev/null || echo "TIP: install tesseract for free local collector-number OCR (brew install tesseract / apt install tesseract-ocr)"
 
-setup-ml:
-	$(PY) -m pip install torch torchvision
+setup-ml: $(PY)
+	$(PY) -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu || $(PY) -m pip install torch torchvision
 	$(PY) -m pip install -r $(SCANNER)/requirements-ml.txt
 
 sync: env
