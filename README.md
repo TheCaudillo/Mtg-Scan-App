@@ -124,7 +124,11 @@ make fixtures # regenerate synthetic binder test photos from real Scryfall image
 | WhatsApp screenshot | 9/9 | 6/9 | 8/9 | ~1.0 s |
 
 Every wrong printing was flagged for review. These are synthetic composites of real Scryfall images
-(`make fixtures`); real phone photos of sleeved cards will be harder. Please report misses.
+(`make fixtures`). **Real sleeved binder photos are much harder:** on two chat-compressed (900×1600)
+phone photos, detection boxed all 16 cards but only 7 were named correctly offline (every miss
+flagged). Low-confidence, unverified matches are therefore kept *out* of the lot totals and shown
+as "unconfirmed" until you check them. For real lots, send full-resolution photos (not chat-compressed)
+and/or set a vision-LLM key — it reads card titles that OCR can't.
 
 ## Known limitations
 

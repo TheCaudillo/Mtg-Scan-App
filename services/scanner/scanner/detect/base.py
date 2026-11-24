@@ -20,6 +20,7 @@ class DetectedCard:
     col: int = 0
     slot: int = 0
     inferred: bool = False  # filled from grid lattice rather than seen directly
+    maybe_inner: bool = False  # box may be the coloured frame inside the black border
 
 
 @dataclass
@@ -29,6 +30,7 @@ class CardCrops:
     strip: np.ndarray  # zoomed, glare-normalized bottom-left collector strip
     set_symbol: np.ndarray
     name_bar: np.ndarray
+    alt: Optional["CardCrops"] = None  # crops from the box grown to the outer card edge
 
 
 @dataclass

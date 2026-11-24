@@ -19,7 +19,7 @@ NAME_BAR_BOX = (0.055, 0.035, 0.800, 0.100)
 def warp_card(image: np.ndarray, quad: np.ndarray) -> np.ndarray:
     q = order_quad(quad)
     w, h = quad_size(q)
-    landscape = w > h * 1.1
+    landscape = w > h * 1.3  # perspective-squashed portrait cards reach ~1.2
     dw, dh = (CARD_H, CARD_W) if landscape else (CARD_W, CARD_H)
     dst = np.array([[0, 0], [dw - 1, 0], [dw - 1, dh - 1], [0, dh - 1]], np.float32)
     M = cv2.getPerspectiveTransform(q, dst)
@@ -56,9 +56,23 @@ def zoom(img: np.ndarray, factor: float = 3.0) -> np.ndarray:
     return cv2.addWeighted(big, 1.6, blur, -0.6, 0)  # unsharp mask
 
 
-def make_crops(image: np.ndarray, quad: np.ndarray) -> CardCrops:
-    card = warp_card(image, quad)
-    return crops_from_card(card)
+INNER_TO_OUTER = (1.0 + 2 * 0.045, 1.0 + 2 * 0.032)  # black border ≈ 4.5% of width, 3.2% of height
+
+
+def grow_to_outer(quad: np.ndarray) -> np.ndarray:
+    c = quad.mean(axis=0)
+    return (c + (quad - c) * np.array(INNER_TO_OUTER, np.float32)).astype(np.float32)
+
+
+def make_crops(image: np.ndarray, quad: np.ndarray, maybe_inner: bool = False) -> CardCrops:
+    crops = crops_from_card(warp_card(image, quad))
+    if maybe_inner:
+        h, w = image.shape[:2]
+        g = grow_to_outer(quad)
+        g[:, 0] = np.clip(g[:, 0], 0, w - 1)
+        g[:, 1] = np.clip(g[:, 1], 0, h - 1)
+        crops.alt = crops_from_card(warp_card(image, g))
+    return crops
 
 
 def crops_from_card(card: np.ndarray) -> CardCrops:

@@ -182,4 +182,6 @@ export interface LotSummary {
   estimated_margin_usd: number | null;
   estimated_margin_pct: number | null;
   verdict: Verdict;
+  unconfirmed_cards: number;
+  unconfirmed_value_usd: number;
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { fileUrl } from "@/lib/api";
-import { adjustedValue, fmtUsd } from "@/lib/lot";
+import { adjustedValue, fmtUsd, isConfirmed } from "@/lib/lot";
 import type { CardRecord, LotSettings } from "@/lib/types";
 import { Badge, FINISH_LABEL, LANG_LABEL, StatusBadge, TreatmentBadges, cx } from "./ui";
 
@@ -65,7 +65,8 @@ export function CardTable({ cards, settings, selectedId, onSelect, onOpen, isWan
               </div>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
-              <span className={cx("tabular-nums", liquid ? "font-semibold text-emerald-300" : "text-zinc-400")}>{fmtUsd(c.unit_price_usd)}</span>
+              <span className={cx("tabular-nums", !isConfirmed(c) ? "text-zinc-500 line-through decoration-zinc-600" : liquid ? "font-semibold text-emerald-300" : "text-zinc-400")}
+                title={!isConfirmed(c) ? "Low-confidence match — not counted in lot totals until verified" : undefined}>{fmtUsd(c.unit_price_usd)}</span>
               {adj !== null && adj !== c.unit_price_usd && <span className="text-[11px] tabular-nums text-zinc-500">adj {fmtUsd(adj)}</span>}
               <StatusBadge card={c} />
             </div>

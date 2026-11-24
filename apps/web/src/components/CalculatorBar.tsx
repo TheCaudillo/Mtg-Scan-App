@@ -60,7 +60,7 @@ export function CalculatorBar({ settings, setSettings, summary, reviewCount }: {
       <div className="mx-auto max-w-7xl px-3 py-2 sm:px-4">
         <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
           <div className="grid w-full grid-cols-3 gap-x-4 gap-y-1 sm:w-auto sm:flex-1 sm:grid-cols-6">
-            <Stat label="Cards" value={String(summary.total_cards)} sub={summary.unpriced_cards ? `${summary.unpriced_cards} unpriced` : `${summary.liquid_cards} liquid · ${summary.bulk_cards} bulk`} />
+            <Stat label="Cards" value={String(summary.total_cards)} sub={summary.unconfirmed_cards ? `${summary.unconfirmed_cards} unconfirmed` : summary.unpriced_cards ? `${summary.unpriced_cards} unpriced` : `${summary.liquid_cards} liquid · ${summary.bulk_cards} bulk`} />
             <Stat label="Retail" value={fmtUsd(summary.retail_total_usd)} sub={mxn(summary.retail_total_usd)} />
             <Stat label={`Liquid ≥${fmtUsd(settings.bulk_cutoff_usd, 0)}`} value={fmtUsd(summary.liquid_total_usd)} sub={`bulk ${fmtUsd(summary.bulk_total_usd)}`} />
             <Stat label="Adjusted lot" value={fmtUsd(summary.adjusted_lot_value_usd)} sub={mxn(summary.adjusted_lot_value_usd)} />
@@ -121,6 +121,7 @@ export function CalculatorBar({ settings, setSettings, summary, reviewCount }: {
           <Num label="Target buy rate" value={settings.target_buy_rate_pct} onChange={(x) => set("target_buy_rate_pct", x ?? 0)} suffix="%" />
           <div className="col-span-2 self-end text-[11px] leading-snug text-zinc-500 sm:col-span-1">
             Max offer = {settings.target_buy_rate_pct}% × liquid value after condition ({settings.condition_pct}%) and non-EN discount. Bulk is a bonus.
+            {summary.unconfirmed_cards > 0 && ` Low-confidence matches (${fmtUsd(summary.unconfirmed_value_usd)}) aren't counted until you verify them.`}
           </div>
         </div>
       </div>

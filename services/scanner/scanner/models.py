@@ -74,6 +74,7 @@ class VisionRead(BaseModel):
     border: Optional[Literal["black", "white", "borderless", "silver", "gold", "unclear"]] = None
     frame_cues: list[str] = Field(default_factory=list)  # extended_art, showcase, retro, full_art ...
     text_snippet: Optional[str] = None
+    title_texts: list[str] = Field(default_factory=list)  # raw noisy OCR of the title bar (for fuzzy ranking)
     is_card: bool = True
     confidence: Optional[float] = None
     source: str = "vision"
@@ -192,6 +193,8 @@ class LotSummary(BaseModel):
     estimated_margin_usd: Optional[float]
     estimated_margin_pct: Optional[float]
     verdict: Literal["good", "borderline", "pass", "n/a"]
+    unconfirmed_cards: int = 0          # low-confidence, unverified: excluded from all totals above
+    unconfirmed_value_usd: float = 0.0  # what they'd add if the guesses were right
 
 
 class WantItem(BaseModel):

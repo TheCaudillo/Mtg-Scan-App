@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from ..config import get_settings
 from ..db import ScryfallDB
 from ..exporters import EXPORTERS
-from ..lot import CONDITION_PRESETS, LotLine, summarize
+from ..lot import CONDITION_PRESETS, LotLine, is_confirmed, summarize
 from ..match import HybridMatcher
 from ..models import (BatchCreate, BatchRecord, BoxesSpec, CardPatch, CardRecord, GridSpec, LotSettings, LotSummary,
                       PageRecord, Printing, WantList)
@@ -318,7 +318,8 @@ def alternatives(scryfall_id: str) -> list[Printing]:
 @app.post("/api/batches/{batch_id}/summary", response_model=LotSummary)
 def lot_summary(batch_id: str, settings: LotSettings = Body(default_factory=LotSettings)) -> LotSummary:
     b = _batch_or_404(batch_id)
-    return summarize([LotLine(c.unit_price_usd, c.quantity, c.lang) for c in b.cards if c.selected], settings)
+    return summarize([LotLine(c.unit_price_usd, c.quantity, c.lang, is_confirmed(c.needs_review, c.confidence, c.user_verified))
+                      for c in b.cards if c.selected], settings)
 
 
 @app.get("/api/batches/{batch_id}/export")

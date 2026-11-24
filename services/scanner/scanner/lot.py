@@ -8,6 +8,7 @@ from .models import LotSettings, LotSummary
 
 CONDITION_PRESETS = {"NM": 100.0, "LP": 85.0, "MP": 70.0, "HP": 50.0}
 BORDERLINE_TOLERANCE = 1.15  # asking up to 15% above max offer = borderline
+UNCONFIRMED_BELOW = 0.5  # unverified matches under this confidence stay out of the totals
 
 
 @dataclass
@@ -15,11 +16,16 @@ class LotLine:
     unit_price_usd: Optional[float]
     quantity: int = 1
     lang: str = "en"
+    confirmed: bool = True  # False → low-confidence guess: shown separately, not counted
+
+
+def is_confirmed(needs_review: bool, confidence: float, user_verified: bool) -> bool:
+    return user_verified or not needs_review or confidence >= UNCONFIRMED_BELOW
 
 
 def summarize(lines: Iterable[LotLine], s: LotSettings) -> LotSummary:
-    total = priced = unpriced = liquid_n = bulk_n = 0
-    retail = liquid = bulk = adj_liquid = adj_bulk = 0.0
+    total = priced = unpriced = liquid_n = bulk_n = unconfirmed_n = 0
+    retail = liquid = bulk = adj_liquid = adj_bulk = unconfirmed_v = 0.0
     cond = s.condition_pct / 100.0
     ne = 1.0 - s.non_english_discount_pct / 100.0
     for ln in lines:
@@ -27,6 +33,10 @@ def summarize(lines: Iterable[LotLine], s: LotSettings) -> LotSummary:
         if q == 0:
             continue
         total += q
+        if not ln.confirmed:
+            unconfirmed_n += q
+            unconfirmed_v += (ln.unit_price_usd or 0.0) * q
+            continue
         if ln.unit_price_usd is None:
             unpriced += q
             continue
@@ -66,4 +76,5 @@ def summarize(lines: Iterable[LotLine], s: LotSettings) -> LotSummary:
         suggested_max_offer_usd=r2(max_offer), asking_price_usd=None if asking_usd is None else r2(asking_usd),
         estimated_margin_usd=None if margin is None else r2(margin),
         estimated_margin_pct=None if margin_pct is None else round(margin_pct, 1), verdict=verdict,  # type: ignore[arg-type]
+        unconfirmed_cards=unconfirmed_n, unconfirmed_value_usd=r2(unconfirmed_v),
     )

@@ -21,6 +21,7 @@ from .base import CardMatcher, FieldReader, MatchResult, VisualHit, VisualIndex
 from .resolver import VISUAL_MIN, Resolver, merge_reads
 
 log = logging.getLogger(__name__)
+VISUAL_K = 40  # deep enough that OCR title evidence can pull the right card up on poor photos
 Progress = Optional[Callable[[int, MatchResult], None]]
 
 
@@ -68,13 +69,21 @@ class HybridMatcher(CardMatcher):
     def _visual_search(self, crops: list[CardCrops]) -> list[list[VisualHit]]:
         if not self.visual or not crops:
             return [[] for _ in crops]
-        hits = self.visual.search([c.art for c in crops])
+        hits = self.visual.search([c.art for c in crops], k=VISUAL_K)
+        # boxes that may hug the inner frame: also try the box grown to the card edge, keep the better
+        alt_idx = [i for i, c in enumerate(crops) if c.alt is not None]
+        if alt_idx:
+            alt_hits = self.visual.search([crops[i].alt.art for i in alt_idx], k=VISUAL_K)  # type: ignore[union-attr]
+            for i, ah in zip(alt_idx, alt_hits):
+                if ah and (not hits[i] or ah[0].score > hits[i][0].score + 0.01):
+                    hits[i] = ah
+                    crops[i] = crops[i].alt  # type: ignore[assignment]
         # upside-down cards / pages: retry weak matches rotated 180°
         weak = [i for i, h in enumerate(hits) if not h or h[0].score < VISUAL_MIN]
         if weak:
             from ..detect.crops import crops_from_card
             flipped = [crops_from_card(cv2.rotate(crops[i].card, cv2.ROTATE_180)) for i in weak]
-            rot_hits = self.visual.search([f.art for f in flipped])
+            rot_hits = self.visual.search([f.art for f in flipped], k=VISUAL_K)
             for i, f, rh in zip(weak, flipped, rot_hits):
                 if rh and (not hits[i] or rh[0].score > hits[i][0].score + 0.05):
                     hits[i] = rh

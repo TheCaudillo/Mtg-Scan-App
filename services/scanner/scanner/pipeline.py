@@ -74,7 +74,7 @@ class ScanPipeline:
         crops, records = [], []
         for c in det.cards:
             cid = uuid.uuid4().hex[:12]
-            cr = make_crops(img, c.quad)
+            cr = make_crops(img, c.quad, c.maybe_inner)
             crops.append(cr)
             names = {}
             for kind, arr in (("card", cr.card), ("art", cr.art), ("strip", cr.strip)):

@@ -53,3 +53,14 @@ def test_mxn_asking_price_and_verdicts():
 def test_quantity_zero_ignored():
     s = summarize([LotLine(50.0, 0, "en")], LotSettings())
     assert s.total_cards == 0 and s.retail_total_usd == 0
+
+
+def test_unconfirmed_guesses_stay_out_of_totals():
+    from scanner.lot import is_confirmed
+    lines = [LotLine(10.0, 1, "en"), LotLine(398.0, 1, "en", confirmed=False)]
+    s = summarize(lines, LotSettings(asking_price=5))
+    assert s.retail_total_usd == 10.0 and s.total_cards == 2
+    assert s.unconfirmed_cards == 1 and s.unconfirmed_value_usd == 398.0
+    assert s.verdict == "good" and s.suggested_max_offer_usd == 6.5
+    assert not is_confirmed(True, 0.28, False)
+    assert is_confirmed(True, 0.28, True) and is_confirmed(True, 0.75, False) and is_confirmed(False, 0.2, False)

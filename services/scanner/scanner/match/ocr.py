@@ -92,6 +92,37 @@ def parse_strip(text: str) -> VisionRead:
     return read
 
 
+_NAME_POOL: dict[int, tuple[list[str], dict[str, str]]] = {}
+
+
+def _name_pool(db: ScryfallDB) -> tuple[list[str], dict[str, str]]:
+    key = id(db)
+    if key not in _NAME_POOL:
+        rows = db.conn.execute("SELECT DISTINCT name_norm, name FROM cards WHERE lang='en'").fetchall()
+        norm_to_name = {r[0]: r[1] for r in rows}
+        for r in db.conn.execute("SELECT DISTINCT n.name_norm, c.name FROM card_names n JOIN cards c ON c.id = n.card_id"):
+            norm_to_name.setdefault(r[0], r[1])  # face names, localized printed names
+        _NAME_POOL[key] = (list(norm_to_name), norm_to_name)
+    return _NAME_POOL[key]
+
+
+def fuzzy_title(db: ScryfallDB, texts: list[str], min_score: float = 80.0) -> Optional[str]:
+    """Best card name for noisy title reads ('Wier there PYyweresteds' → None, 'Hightand Berserker' → ok)."""
+    from rapidfuzz import fuzz, process
+
+    pool, to_name = _name_pool(db)
+    best: tuple[str, float] | None = None
+    for t in texts:
+        t = normalize_name(t)
+        if len(t) < 6:
+            continue
+        # plain whole-string similarity: lenient partial scorers match stray words ("there")
+        hit = process.extractOne(t, pool, scorer=fuzz.ratio, score_cutoff=min_score)
+        if hit and (best is None or hit[1] > best[1]):
+            best = (hit[0], hit[1])
+    return to_name.get(best[0]) if best else None
+
+
 def resolve_name(db: ScryfallDB, text: str) -> Optional[str]:
     """Map a noisy OCR'd title ('[Llanowar Elves.', 'Discover the [Impossible — i.') to a real card name."""
     n = normalize_name(text)
@@ -102,7 +133,8 @@ def resolve_name(db: ScryfallDB, text: str) -> Optional[str]:
     for i in range(0, min(2, len(toks))):
         for j in range(len(toks), i, -1):
             cand = " ".join(toks[i:j])
-            if len(cand) < 4:
+            # the match must explain most of what was read — never a stray word like "there"
+            if len(cand) < 6 or len(cand) < 0.6 * len(n):
                 break
             rows = db.by_name(cand, limit=1)
             if rows:
@@ -127,14 +159,27 @@ class TesseractStripReader(FieldReader):
         self.db = db
 
     async def read(self, crops: CardCrops) -> Optional[VisionRead]:
-        from ..detect.crops import NAME_BAR_BOX, _cut
+        from ..detect.crops import _cut
 
         raw_strip = _cut(crops.card, (0.03, 0.912, 0.42, 0.978))
-        text = await asyncio.to_thread(_ocr, prep_for_ocr(raw_strip), 6)
-        name_txt = await asyncio.to_thread(_ocr, prep_for_ocr(_cut(crops.card, NAME_BAR_BOX), 3.0), 7)
+        text = await asyncio.to_thread(_ocr, prep_for_ocr(raw_strip, 2.5), 6)
         read = parse_strip(text)
-        if self.db is not None and name_txt.strip():
-            read.name = await asyncio.to_thread(resolve_name, self.db, name_txt)
-        if not any([read.collector_number, read.set_code, read.name]):
+        # the detected box may be the card edge or the coloured frame inside the black border,
+        # so read the title from a couple of vertical offsets
+        titles: list[str] = []
+        for box in ((0.03, 0.0, 0.80, 0.085), (0.05, 0.03, 0.80, 0.105)):
+            t = await asyncio.to_thread(_ocr, prep_for_ocr(_cut(crops.card, box), 1.8), 7)
+            t = " ".join(t.split())
+            if len(normalize_name(t)) >= 4:
+                titles.append(t)
+        read.title_texts = titles
+        if self.db is not None and titles:
+            for t in titles:
+                read.name = await asyncio.to_thread(resolve_name, self.db, t)
+                if read.name:
+                    break
+            if not read.name:
+                read.name = await asyncio.to_thread(fuzzy_title, self.db, titles)
+        if not any([read.collector_number, read.set_code, read.name, read.title_texts]):
             return None
         return read

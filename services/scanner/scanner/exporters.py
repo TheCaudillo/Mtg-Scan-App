@@ -84,13 +84,16 @@ def moxfield_csv(batch: BatchRecord, s: LotSettings) -> str:
 
 
 def markdown_summary(batch: BatchRecord, s: LotSettings) -> str:
-    from .lot import LotLine, summarize
+    from .lot import LotLine, is_confirmed, summarize
     rows = list(_exportable(batch))
-    summ = summarize([LotLine(c.unit_price_usd, c.quantity, c.lang) for _, c in rows], s)
+    summ = summarize([LotLine(c.unit_price_usd, c.quantity, c.lang, is_confirmed(c.needs_review, c.confidence, c.user_verified))
+                      for _, c in rows], s)
     lines = [f"# {batch.name}", "",
              f"**{summ.total_cards} cards** · Retail ${summ.retail_total_usd:,.2f} · Liquid (≥${s.bulk_cutoff_usd:.2f}) "
              f"${summ.liquid_total_usd:,.2f} · Bulk ${summ.bulk_total_usd:,.2f} · Suggested max offer "
-             f"**${summ.suggested_max_offer_usd:,.2f}**", "",
+             f"**${summ.suggested_max_offer_usd:,.2f}**"
+             + (f" · {summ.unconfirmed_cards} unconfirmed (${summ.unconfirmed_value_usd:,.2f}) not counted"
+                if summ.unconfirmed_cards else ""), "",
              "| Pg | Slot | Card | Set | # | Finish | Lang | Price | Treatment |",
              "|---:|---:|---|---|---:|---|---|---:|---|"]
     for page, c in sorted(rows, key=lambda t: -(t[1].unit_price_usd or 0)):

@@ -3,6 +3,7 @@ import type { CardRecord, ConditionLabel, LotSettings, LotSummary } from "./type
 
 export const CONDITION_PRESETS: Record<ConditionLabel, number> = { NM: 100, LP: 85, MP: 70, HP: 50 };
 export const BORDERLINE_TOLERANCE = 1.15;
+export const UNCONFIRMED_BELOW = 0.5;
 
 export const DEFAULT_SETTINGS: LotSettings = {
   asking_price: null,
@@ -19,19 +20,29 @@ export interface LotLine {
   unit_price_usd: number | null;
   quantity: number;
   lang: string;
+  confirmed?: boolean; // false → low-confidence guess: shown separately, not counted
+}
+
+export function isConfirmed(c: CardRecord): boolean {
+  return c.user_verified || !c.needs_review || c.confidence >= UNCONFIRMED_BELOW;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 export function summarize(lines: LotLine[], s: LotSettings): LotSummary {
-  let total = 0, priced = 0, unpriced = 0, liquidN = 0, bulkN = 0;
-  let retail = 0, liquid = 0, bulk = 0, adjLiquid = 0, adjBulk = 0;
+  let total = 0, priced = 0, unpriced = 0, liquidN = 0, bulkN = 0, unconfirmedN = 0;
+  let retail = 0, liquid = 0, bulk = 0, adjLiquid = 0, adjBulk = 0, unconfirmedV = 0;
   const cond = s.condition_pct / 100;
   const ne = 1 - s.non_english_discount_pct / 100;
   for (const ln of lines) {
     const q = Math.max(0, ln.quantity);
     if (q === 0) continue;
     total += q;
+    if (ln.confirmed === false) {
+      unconfirmedN += q;
+      unconfirmedV += (ln.unit_price_usd ?? 0) * q;
+      continue;
+    }
     if (ln.unit_price_usd === null) {
       unpriced += q;
       continue;
@@ -83,13 +94,15 @@ export function summarize(lines: LotLine[], s: LotSettings): LotSummary {
     estimated_margin_usd: margin === null ? null : r2(margin),
     estimated_margin_pct: marginPct === null ? null : Math.round(marginPct * 10) / 10,
     verdict,
+    unconfirmed_cards: unconfirmedN,
+    unconfirmed_value_usd: r2(unconfirmedV),
   };
 }
 
 export function cardLines(cards: CardRecord[]): LotLine[] {
   return cards
     .filter((c) => c.selected)
-    .map((c) => ({ unit_price_usd: c.unit_price_usd, quantity: c.quantity, lang: c.lang }));
+    .map((c) => ({ unit_price_usd: c.unit_price_usd, quantity: c.quantity, lang: c.lang, confirmed: isConfirmed(c) }));
 }
 
 export function adjustedValue(c: CardRecord, s: LotSettings): number | null {

@@ -19,6 +19,7 @@ W_VISUAL = 1.0
 W_NAME = 0.6
 W_SET = 0.8
 W_CN = 0.8
+W_TITLE = 0.5            # noisy-title similarity bonus (rapidfuzz partial ratio above 0.5)
 TIE_EPS = 0.04
 MAX_CANDIDATES = 4
 VISUAL_MIN = 0.55        # below this a visual hit alone is not trusted
@@ -42,11 +43,13 @@ class _Cand:
     set_ok: bool = False
     cn_ok: bool = False
     cue: float = 0.0
+    title_sim: float = 0.0
     sources: set[str] = field(default_factory=set)
 
     @property
     def score(self) -> float:
-        return (W_VISUAL * self.visual + W_NAME * self.name + W_SET * self.set_ok + W_CN * self.cn_ok + self.cue)
+        return (W_VISUAL * self.visual + W_NAME * self.name + W_SET * self.set_ok + W_CN * self.cn_ok + self.cue
+                + W_TITLE * max(0.0, self.title_sim - 0.5))
 
 
 def merge_reads(reads: list[Optional[VisionRead]]) -> Optional[VisionRead]:
@@ -72,6 +75,16 @@ def _names_match(row: CardRow, read: VisionRead) -> bool:
         return False
     names = {normalize_name(row.name), normalize_name(row.printed_name)} | {normalize_name(x) for x in row.name.split(" // ")}
     return bool(targets & names)
+
+
+def _title_similarity(row: CardRow, texts: list[str]) -> float:
+    try:
+        from rapidfuzz import fuzz
+    except ImportError:  # pragma: no cover
+        return 0.0
+    names = {normalize_name(x) for x in row.name.split(" // ")} | {normalize_name(row.printed_name)}
+    names.discard("")
+    return max((fuzz.partial_ratio(n, normalize_name(t)) / 100 for n in names for t in texts if len(n) >= 3), default=0.0)
 
 
 class Resolver:
@@ -124,6 +137,8 @@ class Resolver:
             for c in cands.values():
                 r = c.row
                 c.name = _names_match(r, read)
+                if read.title_texts and not c.name:
+                    c.title_sim = _title_similarity(r, read.title_texts)
                 if read.set_code:
                     c.set_ok = r.set_code == read.set_code.lower()
                 if read.collector_number:
