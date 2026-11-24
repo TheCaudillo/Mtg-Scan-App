@@ -89,7 +89,13 @@ class ScanPipeline:
         if on_detect:
             on_detect(det, records)
 
+        guessed = det.method == "uniform_grid"  # no card edges found: boxes are a blind guess
+
         def progress(i: int, r: MatchResult) -> None:
+            if guessed and r.selected is not None and "low_confidence" not in r.review_reasons:
+                r.review_reasons = ["low_confidence", *r.review_reasons]
+                r.needs_review = True
+                r.confidence = min(r.confidence, 0.3)
             records[i] = result_to_record(r, records[i])
             if on_card:
                 on_card(records[i])

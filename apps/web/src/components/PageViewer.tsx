@@ -47,6 +47,7 @@ export function PageViewer({ page, cards, selectedId, onSelect, batchId, busy }:
   const [grid, setGrid] = useState<GridSpec | null>(null);
   const [drag, setDrag] = useState<Drag>(null);
   const [err, setErr] = useState<string | null>(null);
+  const detectionFailed = (page.message ?? "").includes("uniform_grid");
   const w = page.width || 1000;
   const h = page.height || 1000;
   const handleR = Math.max(w, h) * 0.014;
@@ -73,7 +74,8 @@ export function PageViewer({ page, cards, selectedId, onSelect, batchId, busy }:
 
   function startGrid() {
     const cb = page.content_box ?? [0, 0, w, h];
-    const all = cards.flatMap((c) => c.quad);
+    // only trust existing boxes if the detector actually found card edges
+    const all = detectionFailed ? [] : cards.flatMap((c) => c.quad);
     let corners: Point[];
     if (all.length >= 8) {
       const xs = all.map((p) => p.x), ys = all.map((p) => p.y);
@@ -157,6 +159,20 @@ export function PageViewer({ page, cards, selectedId, onSelect, batchId, busy }:
         </span>
       </div>
       {err && <div className="text-xs text-rose-400">{err}</div>}
+      {detectionFailed && mode === "view" && page.status === "done" && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md bg-amber-500/10 p-2 text-sm text-amber-200 ring-1 ring-amber-500/40">
+          <span className="flex-1">
+            Couldn&apos;t find the card edges in this photo, so these boxes are a guess and the results are unreliable.
+            Use <b>Grid overlay</b>: drag the 4 yellow corners onto the outer corners of the cards, set rows × columns, then <b>Scan with grid</b>.
+          </span>
+          <Button variant="primary" className="min-h-8 text-xs" onClick={startGrid}>Place grid</Button>
+        </div>
+      )}
+      {mode === "grid" && (
+        <div className="rounded-md bg-zinc-900 p-2 text-xs text-zinc-300 ring-1 ring-zinc-700">
+          Drag the 4 yellow corner dots to the <b>outer corners of the card area</b> (top-left card&apos;s top-left corner, etc.). Only cover full pockets on this page, not cards peeking from the next page.
+        </div>
+      )}
       {scanning && (
         <div className="h-1 overflow-hidden rounded bg-zinc-800">
           <div className="h-full bg-amber-400 transition-all" style={{ width: `${Math.max(5, page.progress * 100)}%` }} />
