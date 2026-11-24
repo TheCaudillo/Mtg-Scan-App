@@ -11,6 +11,10 @@ scripts/            sync_scryfall.py · build_art_index.py · test_scan.py · ma
 data/               scryfall.db, app.db, art_index/, uploads/  (gitignored)
 ```
 
+| Lot + calculator | Review drawer | Phone |
+|---|---|---|
+| ![Lot view](docs/screenshots/2-lot-calculator.jpg) | ![Review drawer](docs/screenshots/3-review-drawer.jpg) | ![Mobile](docs/screenshots/5-mobile.jpg) |
+
 ## Quick start
 
 Prerequisites: Python 3.11+, Node 20+, and optionally `tesseract` (`brew install tesseract` /
