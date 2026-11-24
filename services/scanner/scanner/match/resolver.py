@@ -23,6 +23,8 @@ TIE_EPS = 0.04
 MAX_CANDIDATES = 4
 VISUAL_MIN = 0.55        # below this a visual hit alone is not trusted
 VISUAL_STRONG = 0.80
+VISUAL_SURE = 0.88       # this similarity alone is decisive
+VISUAL_MARGIN = 0.035    # top-1 minus top-2 (different artwork) needed below VISUAL_SURE
 GLARE_GAP_USD = 2.0       # finish price gap that warrants a human look when foil is uncertain
 
 CUE_TREATMENT = {
@@ -174,19 +176,25 @@ class Resolver:
         reasons: list[str] = []
 
         # ---- confidence -------------------------------------------------------------------------
+        # wrong CLIP matches cluster tightly (top-1 ≈ top-2); right ones stand out
+        visual_sure = False
+        if hits and best.visual > 0 and best.row.illustration_id == hits[0].illustration_id:
+            others = [h.score for h in hits[1:] if h.illustration_id != hits[0].illustration_id]
+            margin = hits[0].score - (others[0] if others else 0.0)
+            visual_sure = hits[0].score >= VISUAL_SURE or (hits[0].score >= VISUAL_STRONG * 0.97 and margin >= VISUAL_MARGIN)
         exact = best.set_ok and best.cn_ok
         if exact and (best.name or best.visual >= VISUAL_MIN):
             conf = 0.97
         elif exact:
             conf = 0.85
-        elif best.visual >= VISUAL_STRONG and (best.name or not (read and (read.name or read.printed_name))):
-            conf = 0.9 if len(ties) == 1 else 0.75
+        elif visual_sure and (best.name or not (read and (read.name or read.printed_name))):
+            conf = 0.92 if best.name else (0.9 if len(ties) == 1 else 0.75)
         elif best.name and best.visual >= VISUAL_MIN:
             conf = 0.85 if len(ties) == 1 else 0.7
         elif best.name:
             conf = 0.7 if len(ties) == 1 else 0.55
         else:
-            conf = max(0.2, min(0.7, best.visual))
+            conf = max(0.2, min(0.55, best.visual - 0.3))  # ambiguous artwork match
 
         # ---- review reasons ---------------------------------------------------------------------
         if len(ties) > 1:

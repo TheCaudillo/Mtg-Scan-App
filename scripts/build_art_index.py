@@ -31,41 +31,49 @@ SHARD = 256
 
 
 def targets(db: ScryfallDB, sets: set[str] | None, since: str | None, limit: int | None) -> list[tuple[str, str, str]]:
-    sql = (
-        "SELECT illustration_id, id, image_art_crop, MAX(released_at) FROM cards "
-        "WHERE lang='en' AND illustration_id IS NOT NULL AND image_art_crop IS NOT NULL"
-    )
+    """One representative printing per illustration. Prefer what people actually hold in binders:
+    modern/standard frame, black border, not full-art/borderless/extended/showcase, not Secret Lair or promo
+    (those crop the same artwork differently)."""
+    where = ["lang='en'", "illustration_id IS NOT NULL", "image_art_crop IS NOT NULL"]
     params: list = []
     if sets:
-        sql += f" AND set_code IN ({','.join('?' * len(sets))})"
+        where.append(f"set_code IN ({','.join('?' * len(sets))})")
         params += sorted(sets)
     if since:
-        sql += " AND released_at >= ?"
+        where.append("released_at >= ?")
         params.append(since)
-    sql += " GROUP BY illustration_id ORDER BY MAX(released_at) DESC"
-    rows = db.conn.execute(sql, params).fetchall()
-    out = [(r[0], r[1], r[2]) for r in rows]
+    sql = f"""
+        SELECT illustration_id, id, image_art_crop FROM (
+          SELECT illustration_id, id, image_art_crop, released_at,
+                 ROW_NUMBER() OVER (PARTITION BY illustration_id ORDER BY
+                   (border_color != 'black'), full_art,
+                   (frame_effects LIKE '%extendedart%' OR frame_effects LIKE '%showcase%'),
+                   (frame NOT IN ('2015', '2003')), (set_code = 'sld'), promo, released_at DESC) AS rn
+          FROM cards WHERE {' AND '.join(where)}
+        ) WHERE rn = 1 ORDER BY released_at DESC"""
+    out = [(r[0], r[1], r[2]) for r in db.conn.execute(sql, params).fetchall()]
     return out[:limit] if limit else out
 
 
 def finalize(index_dir: Path) -> int:
     import faiss
 
-    shards = sorted((index_dir / "shards").glob("*.npz"))
+    shards = sorted(p for p in (index_dir / "shards").glob("*.npz") if ".tmp" not in p.name)
     if not shards:
         print("[index] no shards yet")
         return 0
-    embs, ids = [], []
-    seen: set[str] = set()
+    latest: dict[str, tuple[np.ndarray, str]] = {}  # later shards override earlier (representative refresh)
     for s in shards:
-        z = np.load(s, allow_pickle=False)
-        for e, ill, cid in zip(z["emb"], z["ill"], z["cid"]):
-            if str(ill) in seen:
-                continue
-            seen.add(str(ill))
-            embs.append(e)
-            ids.append({"illustration_id": str(ill), "card_id": str(cid)})
-    mat = np.stack(embs).astype(np.float32)
+        try:
+            z = np.load(s, allow_pickle=False)
+            rows = list(zip(z["emb"], z["ill"], z["cid"]))
+        except Exception as e:  # noqa: BLE001 — shard still being written by a concurrent run
+            print(f"[index] skipping unreadable shard {s.name}: {e}")
+            continue
+        for e, ill, cid in rows:
+            latest[str(ill)] = (e, str(cid))
+    ids = [{"illustration_id": ill, "card_id": cid} for ill, (_, cid) in latest.items()]
+    mat = np.stack([e for e, _ in latest.values()]).astype(np.float32)
     index = faiss.IndexFlatIP(mat.shape[1])
     index.add(mat)
     tmp = index_dir / "index.faiss.tmp"
@@ -95,11 +103,18 @@ def main() -> int:
     db = ScryfallDB()
     sets = {x.strip().lower() for x in args.sets.split(",") if x.strip()} or None
     todo = targets(db, sets, args.since or None, args.limit or None)
-    done: set[str] = set()
-    for sh in (index_dir / "shards").glob("*.npz"):
-        done.update(str(x) for x in np.load(sh)["ill"])
-    todo = [t for t in todo if t[0] not in done]
-    print(f"[index] {len(done):,} artworks already embedded, {len(todo):,} to go")
+    done: set[tuple[str, str]] = set()  # (illustration_id, representative card_id)
+    for sh in sorted((index_dir / "shards").glob("*.npz")):
+        if ".tmp" in sh.name:
+            sh.unlink()
+            continue
+        try:
+            z = np.load(sh)
+            done.update(zip((str(x) for x in z["ill"]), (str(x) for x in z["cid"])))
+        except Exception:  # noqa: BLE001 — truncated shard from an interrupted run: redo it
+            sh.unlink()
+    todo = [t for t in todo if (t[0], t[1]) not in done]
+    print(f"[index] {len(done):,} artworks already embedded, {len(todo):,} to go (new or better representative)")
     if not todo:
         finalize(index_dir)
         return 0
@@ -121,7 +136,8 @@ def main() -> int:
 
     t0 = time.time()
     n_done = 0
-    shard_no = len(list((index_dir / "shards").glob("*.npz")))
+    existing = [int(p.stem.split("_")[1].split(".")[0]) for p in (index_dir / "shards").glob("shard_*.npz")]
+    shard_no = max(existing, default=-1) + 1
     with ThreadPoolExecutor(args.workers) as pool:
         for start in range(0, len(todo), SHARD):
             chunk = todo[start:start + SHARD]
@@ -130,8 +146,9 @@ def main() -> int:
             if not keep:
                 continue
             vecs = np.concatenate([emb.embed_pil([im for _, im in keep[i:i + 64]]) for i in range(0, len(keep), 64)])
-            np.savez(index_dir / "shards" / f"shard_{shard_no:05d}.npz", emb=vecs,
-                     ill=np.array([t[0] for t, _ in keep]), cid=np.array([t[1] for t, _ in keep]))
+            tmp = index_dir / "shards" / f"shard_{shard_no:05d}.tmp.npz"
+            np.savez(tmp, emb=vecs, ill=np.array([t[0] for t, _ in keep]), cid=np.array([t[1] for t, _ in keep]))
+            tmp.rename(index_dir / "shards" / f"shard_{shard_no:05d}.npz")
             shard_no += 1
             n_done += len(keep)
             rate = n_done / (time.time() - t0)
